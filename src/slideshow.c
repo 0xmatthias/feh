@@ -749,8 +749,11 @@ gib_list *feh_list_jump(gib_list * root, gib_list * l, int direction, int num)
 		} else {
 			if (ret->prev)
 				ret = ret->prev;
-			else
-				ret = gib_list_last(ret);
+			else {
+				if (!opt.cycle_once) {
+					ret = gib_list_last(ret);
+				}
+			}
 		}
 	}
 	return (ret);

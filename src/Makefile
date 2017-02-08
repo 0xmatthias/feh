@@ -6,7 +6,7 @@ OBJECTS = ${TARGETS:.c=.o}
 I_SRCS = ${shell echo *.raw}
 I_DSTS = ${I_SRCS:.raw=.inc}
 
-feh: deps.mk ${OBJECTS} ${I_DSTS}
+viewer: deps.mk ${OBJECTS} ${I_DSTS}
 	${CC} ${LDFLAGS} ${CFLAGS} -o $@ ${OBJECTS} ${LDLIBS}
 
 include deps.mk
