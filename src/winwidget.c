@@ -81,7 +81,7 @@ static winwidget winwidget_allocate(void)
 	return(ret);
 }
 
-winwidget winwidget_create_from_image(Imlib_Image im, char *name, char type)
+winwidget winwidget_create_from_image(Imlib_Image im, char type)
 {
 	winwidget ret = NULL;
 
@@ -95,11 +95,6 @@ winwidget winwidget_create_from_image(Imlib_Image im, char *name, char type)
 	ret->w = ret->im_w = gib_imlib_image_get_width(ret->im);
 	ret->h = ret->im_h = gib_imlib_image_get_height(ret->im);
 
-	if (name)
-		ret->name = estrdup(name);
-	else
-		ret->name = estrdup(PACKAGE);
-
 	if (opt.full_screen && (type != WIN_TYPE_THUMBNAIL))
 		ret->full_screen = True;
 	winwidget_create_window(ret, ret->w, ret->h);
@@ -108,7 +103,7 @@ winwidget winwidget_create_from_image(Imlib_Image im, char *name, char type)
 	return(ret);
 }
 
-winwidget winwidget_create_from_file(gib_list * list, char *name, char type)
+winwidget winwidget_create_from_file(gib_list * list, char type)
 {
 	winwidget ret = NULL;
 	feh_file *file = FEH_FILE(list->data);
@@ -119,10 +114,6 @@ winwidget winwidget_create_from_file(gib_list * list, char *name, char type)
 	ret = winwidget_allocate();
 	ret->file = list;
 	ret->type = type;
-	if (name)
-		ret->name = estrdup(name);
-	else
-		ret->name = estrdup(file->filename);
 
 	if (winwidget_loadimage(ret, file) == 0) {
 		winwidget_destroy(ret);
@@ -432,12 +423,14 @@ void winwidget_render_image(winwidget winwid, int resize, int force_alias)
 	int antialias = 0;
 	int need_center = winwid->had_resize;
 
-	/* Causes horrible "tearing" (render picture big/small if auto-zoom is on),
+	/* Causes fast flickering (render picture big/small if auto-zoom is on), when a
+	 * tiing window manager is used,
 	 * if you switch fast between images (slideshow).
+	 */
 	if (!winwid->full_screen && resize) {
 		winwidget_resize(winwid, winwid->im_w, winwid->im_h, 0);
 		winwidget_reset_image(winwid);
-	}*/
+	}
 
 	/* bounds checks for panning */
 	if (winwid->im_x > winwid->w)
@@ -457,7 +450,7 @@ void winwidget_render_image(winwidget winwid, int resize, int force_alias)
 				     || (winwid->has_rotated)))
 		feh_draw_checks(winwid);
 
-	if (!winwid->full_screen && opt.zoom_mode
+	if (!winwid->full_screen && opt.zoom_mode && (winwid->type != WIN_TYPE_THUMBNAIL)
 				&& (winwid->zoom == 1.0) && ! (opt.geom_flags & (WidthValue | HeightValue))
 				&& (winwid->w > winwid->im_w) && (winwid->h > winwid->im_h))
 		feh_calc_needed_zoom(&(winwid->zoom), winwid->im_w, winwid->im_h, winwid->w, winwid->h);
@@ -466,14 +459,14 @@ void winwidget_render_image(winwidget winwid, int resize, int force_alias)
 	 * In case of a resize, the geomflags (and im_w, im_h) get updated by
 	 * the ConfigureNotify handler.
 	 */
-	if (need_center && !winwid->full_screen
+	if (need_center && !winwid->full_screen && (winwid->type != WIN_TYPE_THUMBNAIL)
 				&& (opt.geom_flags & (WidthValue | HeightValue))
 				&& ((winwid->w < winwid->im_w) || (winwid->h < winwid->im_h)))
 		feh_calc_needed_zoom(&(winwid->zoom), winwid->im_w, winwid->im_h, winwid->w, winwid->h);
 
 
-	if (resize && (winwid->full_screen
-                     || (opt.geom_flags & (WidthValue | HeightValue)))) {
+	if (resize && (winwid->type != WIN_TYPE_THUMBNAIL) &&
+			(winwid->full_screen || (opt.geom_flags & (WidthValue | HeightValue)))) {
 		int smaller;	/* Is the image smaller than screen? */
 		int max_w = 0, max_h = 0;
 
@@ -500,12 +493,6 @@ void winwidget_render_image(winwidget winwid, int resize, int force_alias)
 			   && (winwid->im_h < max_h));
 
 		if (!smaller || opt.zoom_mode) {
-			double ratio = 0.0;
-
-			/* Image is larger than the screen (so wants shrinking), or it's
-			   smaller but wants expanding to fill it */
-			ratio = feh_calc_needed_zoom(&(winwid->zoom), winwid->im_w, winwid->im_h, max_w, max_h);
-
 			/* contributed by Jens Laas <jens.laas@data.slu.se>
 			 * What it does:
 			 * zooms images by a fixed amount but never larger than the screen.
@@ -537,6 +524,10 @@ void winwidget_render_image(winwidget winwid, int resize, int force_alias)
 				winwid->im_y = ((int)
 						(max_h - (winwid->im_h * winwid->zoom))) >> 1;
 			} else {
+				/* Image is larger than the screen (so wants shrinking), or it's
+				   smaller but wants expanding to fill it */
+				double ratio = feh_calc_needed_zoom(&(winwid->zoom), winwid->im_w, winwid->im_h, max_w, max_h);
+
 				if (ratio > 1.0) {
 					/* height is the factor */
 					winwid->im_x = 0;
@@ -643,11 +634,12 @@ void winwidget_render_image(winwidget winwid, int resize, int force_alias)
 			feh_draw_info(winwid);
 		if (winwid->errstr)
 			feh_draw_errstr(winwid);
-		if (opt.title) {
-			/* title might contain e.g. the zoom specifier -> rewrite */
-			char *s = slideshow_create_name(FEH_FILE(current_file->data), winwid);
-			winwidget_rename(winwid, s);
-			free(s);
+		if (winwid->file != NULL) {
+			if (opt.title && winwid->type != WIN_TYPE_THUMBNAIL_VIEWER) {
+				winwidget_rename(winwid, feh_printf(opt.title, FEH_FILE(winwid->file->data), winwid));
+			} else if (opt.thumb_title && winwid->type == WIN_TYPE_THUMBNAIL_VIEWER) {
+				winwidget_rename(winwid, feh_printf(opt.thumb_title, FEH_FILE(winwid->file->data), winwid));
+			}
 		}
 	} else if ((opt.mode == MODE_ZOOM) && !antialias)
 		feh_draw_zoom(winwid);
@@ -764,6 +756,8 @@ void winwidget_destroy(winwidget winwid)
 		free(winwid->name);
 	if (winwid->gc)
 		XFreeGC(disp, winwid->gc);
+	if ((winwid->type == WIN_TYPE_THUMBNAIL_VIEWER) && (winwid->file != NULL))
+		gib_list_free(winwid->file);
 	if (winwid->im)
 		gib_imlib_free_image_and_decache(winwid->im);
 	free(winwid);
@@ -1010,7 +1004,7 @@ void winwidget_rename(winwidget winwid, char *newname)
 void winwidget_free_image(winwidget w)
 {
 	if (w->im)
-		gib_imlib_free_image_and_decache(w->im);
+		gib_imlib_free_image(w->im);
 	w->im = NULL;
 	w->im_w = 0;
 	w->im_h = 0;

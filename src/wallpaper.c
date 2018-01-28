@@ -294,73 +294,16 @@ void feh_wm_set_bg(char *fil, Imlib_Image im, int centered, int scaled,
 		unsigned long length, after;
 		unsigned char *data_root = NULL, *data_esetroot = NULL;
 		Pixmap pmap_d1, pmap_d2;
-		gib_list *l;
 
-		/* string for sticking in ~/.fehbg */
-		char *fehbg = NULL;
-		char fehbg_args[512];
-		fehbg_args[0] = '\0';
 		char *home;
-		char filbuf[4096];
-		char *bgfill = NULL;
-		bgfill = opt.image_bg == IMAGE_BG_WHITE ?  "--image-bg white" : "--image-bg black" ;
-
-#ifdef HAVE_LIBXINERAMA
-		if (opt.xinerama) {
-			if (opt.xinerama_index >= 0) {
-				snprintf(fehbg_args, sizeof(fehbg_args),
-					"--xinerama-index %d", opt.xinerama_index);
-			}
-		}
-		else
-			snprintf(fehbg_args, sizeof(fehbg_args), "--no-xinerama");
-#endif			/* HAVE_LIBXINERAMA */
 
 		/* local display to set closedownmode on */
 		Display *disp2;
 		Window root2;
 		int depth2;
-		int in, out, w, h;
+		int w, h;
 
 		D(("Falling back to XSetRootWindowPixmap\n"));
-
-		/* Put the filename in filbuf between ' and escape ' in the filename */
-		out = 0;
-
-		if (fil && !use_filelist) {
-			filbuf[out++] = '\'';
-
-			fil = feh_absolute_path(fil);
-
-			for (in = 0; fil[in] && out < 4092; in++) {
-
-				if (fil[in] == '\'')
-					filbuf[out++] = '\\';
-				filbuf[out++] = fil[in];
-			}
-			filbuf[out++] = '\'';
-			free(fil);
-
-		} else {
-			for (l = filelist; l && out < 4092; l = l->next) {
-				filbuf[out++] = '\'';
-
-				fil = feh_absolute_path(FEH_FILE(l->data)->filename);
-
-				for (in = 0; fil[in] && out < 4092; in++) {
-
-					if (fil[in] == '\'')
-						filbuf[out++] = '\\';
-					filbuf[out++] = fil[in];
-				}
-				filbuf[out++] = '\'';
-				filbuf[out++] = ' ';
-				free(fil);
-			}
-		}
-
-
-		filbuf[out++] = 0;
 
 		if (scaled) {
 			pmap_d1 = XCreatePixmap(disp, root, scr->width, scr->height, depth);
@@ -389,7 +332,6 @@ void feh_wm_set_bg(char *fil, Imlib_Image im, int centered, int scaled,
 #endif			/* HAVE_LIBXINERAMA */
 				feh_wm_set_bg_scaled(pmap_d1, im, use_filelist,
 					0, 0, scr->width, scr->height);
-			fehbg = estrjoin(" ", "feh", fehbg_args, "--bg-scale", filbuf, NULL);
 		} else if (centered) {
 
 			D(("centering\n"));
@@ -418,8 +360,6 @@ void feh_wm_set_bg(char *fil, Imlib_Image im, int centered, int scaled,
 					0, 0, scr->width, scr->height);
 
 			XFreeGC(disp, gc);
-
-			fehbg = estrjoin(" ", "feh", fehbg_args, bgfill, "--bg-center", filbuf, NULL);
 
 		} else if (filled == 1) {
 
@@ -450,8 +390,6 @@ void feh_wm_set_bg(char *fil, Imlib_Image im, int centered, int scaled,
 				feh_wm_set_bg_filled(pmap_d1, im, use_filelist
 					, 0, 0, scr->width, scr->height);
 
-			fehbg = estrjoin(" ", "feh", fehbg_args, "--bg-fill", filbuf, NULL);
-
 		} else if (filled == 2) {
 
 			pmap_d1 = XCreatePixmap(disp, root, scr->width, scr->height, depth);
@@ -479,8 +417,6 @@ void feh_wm_set_bg(char *fil, Imlib_Image im, int centered, int scaled,
 
 			XFreeGC(disp, gc);
 
-			fehbg = estrjoin(" ", "feh", fehbg_args, bgfill, "--bg-max", filbuf, NULL);
-
 		} else {
 			if (use_filelist)
 				feh_wm_load_next(&im);
@@ -488,10 +424,9 @@ void feh_wm_set_bg(char *fil, Imlib_Image im, int centered, int scaled,
 			h = gib_imlib_image_get_height(im);
 			pmap_d1 = XCreatePixmap(disp, root, w, h, depth);
 			gib_imlib_render_image_on_drawable(pmap_d1, im, 0, 0, 1, 0, 0);
-			fehbg = estrjoin(" ", "feh --bg-tile", filbuf, NULL);
 		}
 
-		if (fehbg && !opt.no_fehbg) {
+		if (!opt.no_fehbg) {
 			home = getenv("HOME");
 			if (home) {
 				FILE *fp;
@@ -501,7 +436,33 @@ void feh_wm_set_bg(char *fil, Imlib_Image im, int centered, int scaled,
 				if ((fp = fopen(path, "w")) == NULL) {
 					weprintf("Can't write to %s", path);
 				} else {
-					fprintf(fp, "#!/bin/sh\n%s\n", fehbg);
+					fputs("#!/bin/sh\n", fp);
+					if (use_filelist) {
+						for (int i = 0; i < cmdargc; i++) {
+							fputs(shell_escape(cmdargv[i]), fp);
+							fputc(' ', fp);
+						}
+					} else if (fil) {
+						fputs("feh --bg-", fp);
+						if (centered)
+							fputs("center", fp);
+						else if (scaled)
+							fputs("scale", fp);
+						else if (filled)
+							fputs("fill", fp);
+						else
+							fputs("tile", fp);
+
+						if (opt.force_aliasing)
+							fputs(" --force-aliasing", fp);
+#ifdef HAVE_LIBXINERAMA
+						if (!opt.xinerama)
+							fputs(" --no-xinerama", fp);
+#endif
+						fputc(' ', fp);
+						fputs(shell_escape(fil), fp);
+					}
+					fputc('\n', fp);
 					fclose(fp);
 					stat(path, &s);
 					if (chmod(path, s.st_mode | S_IXUSR | S_IXGRP) != 0) {
@@ -512,8 +473,6 @@ void feh_wm_set_bg(char *fil, Imlib_Image im, int centered, int scaled,
 			}
 		}
 		
-		free(fehbg);
-
 		/* create new display, copy pixmap to new display */
 		disp2 = XOpenDisplay(NULL);
 		if (!disp2)
@@ -765,10 +724,11 @@ void enl_ipc_send(char *str)
 	return;
 }
 
-static sighandler_t *enl_ipc_timeout(int sig)
+void enl_ipc_timeout(int sig)
 {
-	timeout = 1;
-	return((sighandler_t *) sig);
+	if (sig == SIGALRM)
+		timeout = 1;
+	return;
 }
 
 char *enl_wait_for_reply(void)
@@ -795,7 +755,7 @@ char *enl_ipc_get(const char *msg_data)
 {
 
 	static char *message = NULL;
-	static unsigned short len = 0;
+	static size_t len = 0;
 	char buff[13], *ret_msg = NULL;
 	register unsigned char i;
 	unsigned char blen;
@@ -828,7 +788,8 @@ char *enl_ipc_get(const char *msg_data)
 char *enl_send_and_wait(char *msg)
 {
 	char *reply = IPC_TIMEOUT;
-	sighandler_t old_alrm;
+	struct sigaction e17_sh, feh_sh;
+	sigset_t e17_ss;
 
 	/*
 	 * Shortcut this func and return IPC_FAKE
@@ -847,7 +808,19 @@ char *enl_send_and_wait(char *msg)
 				sleep(1);
 		}
 	}
-	old_alrm = (sighandler_t) signal(SIGALRM, (sighandler_t) enl_ipc_timeout);
+
+	if ((sigemptyset(&e17_ss) == -1) || sigaddset(&e17_ss, SIGALRM) == -1) {
+		weprintf("Failed to set up temporary E17 signal masks");
+		return reply;
+	}
+	e17_sh.sa_handler = enl_ipc_timeout;
+	e17_sh.sa_mask = e17_ss;
+	e17_sh.sa_flags = 0;
+	if (sigaction(SIGALRM, &e17_sh, &feh_sh) == -1) {
+		weprintf("Failed to set up temporary E17 signal handler");
+		return reply;
+	}
+
 	for (; reply == IPC_TIMEOUT;) {
 		timeout = 0;
 		enl_ipc_send(msg);
@@ -859,6 +832,8 @@ char *enl_send_and_wait(char *msg)
 			ipc_win = None;
 		}
 	}
-	signal(SIGALRM, old_alrm);
+	if (sigaction(SIGALRM, &feh_sh, NULL) == -1) {
+		weprintf("Failed to restore signal handler");
+	}
 	return(reply);
 }

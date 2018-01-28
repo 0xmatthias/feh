@@ -137,10 +137,12 @@ int feh_load_image(Imlib_Image * im, feh_file * file);
 void show_mini_usage(void);
 void slideshow_change_image(winwidget winwid, int change, int render);
 void slideshow_pause_toggle(winwidget w);
-char *slideshow_create_name(feh_file * file, winwidget winwid);
 void init_keyevents(void);
 void init_buttonbindings(void);
+void setup_stdin(void);
+void restore_stdin(void);
 void feh_event_handle_keypress(XEvent * ev);
+void feh_event_handle_stdin();
 void feh_event_handle_generic(winwidget winwid, unsigned int state, KeySym keysym, unsigned int button);
 fehkey *feh_str_to_kb(char * action);
 void feh_action_run(feh_file * file, char *action, winwidget winwid);
@@ -198,5 +200,7 @@ extern char *mode;		/* label for the current mode */
 
 /* to terminate long-running children with SIGALRM */
 extern int childpid;
+
+extern unsigned char control_via_stdin;
 
 #endif

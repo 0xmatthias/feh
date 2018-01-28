@@ -3,7 +3,7 @@
 /src/*.o
 /src/*.inc
 /src/feh
-/src/viewer
+/src/feh
 /man/*.1
 *~
 core
